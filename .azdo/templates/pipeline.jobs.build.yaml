@@ -1,0 +1,31 @@
+parameters:
+  serviceConnection: ''
+  repositoryName: ''
+  containerRegistryName: ''
+  imageObject: {
+    imageName: '',
+    imageVersion: '',
+    dockerFileName: ''
+  }
+  yamlBuildTaskFile: ''
+  acrServiceConnection: ''
+
+steps:
+  - task: Docker@2
+    displayName: Docker build - ${{ parameters.imageObject.imageName }}
+    inputs:
+      containerRegistry: '$(acrServiceConnection)'
+      repository: '${{ parameters.repositoryName }}/${{ parameters.imageObject.imageName }}'
+      command: 'build'
+      Dockerfile: '**/${{ parameters.imageObject.dockerFileName }}'
+      tags: '${{ parameters.imageObject.imageVersion }}'
+      arguments: '--build-arg REGISTRY_NAME=$(containerRegistryName)'
+
+  - task: Docker@2
+    displayName: Docker push - ${{ parameters.imageObject.imageName }}
+    inputs:
+      containerRegistry: '$(acrServiceConnection)'
+      repository: '${{ parameters.repositoryName }}/${{ parameters.imageObject.imageName }}'
+      command: 'push'
+      Dockerfile: '**/${{ parameters.imageObject.dockerFileName }}'
+      tags: '${{ parameters.imageObject.imageVersion }}'

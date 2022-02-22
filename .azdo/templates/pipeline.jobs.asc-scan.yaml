@@ -1,0 +1,30 @@
+parameters:
+  serviceConnection: ''
+  containerRegistryName: ''
+  buildImages: []
+
+jobs:
+  - job: 'WaitFor_ASC_ScanResult'
+    pool: Server
+    steps:
+      - task: Delay@1
+        displayName: Wait for scan result
+        inputs:
+          delayForMinutes: '5'
+
+  - job: 'Image_Scan_Gate'
+    dependsOn: 'WaitFor_ASC_ScanResult'
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - checkout: self
+
+      - ${{ each image in parameters.buildImages }}:
+        - task: AzureCLI@2
+          displayName: 'Image Scan security gate - ${{ image.imageName }}'
+          inputs:
+            azureSubscription: "$(serviceConnection)"
+            scriptType: pscore
+            scriptLocation: 'scriptPath'
+            scriptPath: '$(System.DefaultWorkingDirectory)/scripts/ImageScanSummaryAssessmentGate.ps1'
+            arguments: '-RegistryName $(containerRegistryName) -Repository "baseimages/alpine/${{ image.imageName }}"'

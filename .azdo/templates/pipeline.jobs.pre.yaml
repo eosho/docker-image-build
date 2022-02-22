@@ -1,0 +1,36 @@
+jobs:
+  - job: 'Build'
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - checkout: self
+      - task: Bash@3
+        displayName: 'Install bicep CLI'
+        inputs:
+          targetType: 'inline'
+          script: |
+            curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+            chmod +x ./bicep
+            sudo mv ./bicep /usr/local/bin/bicep
+            bicep --help
+
+      - task: Bash@3
+        displayName: 'Build ARM Templates from bicep file'
+        inputs:
+          targetType: 'inline'
+          script: |
+            # build bicep file
+            bicep build '$(System.DefaultWorkingDirectory)/bicep/main.bicep'
+
+      - task: CopyFiles@2
+        displayName: Copy build artifacts
+        inputs:
+          sourceFolder: '$(System.DefaultWorkingDirectory)'
+          contents: '**'
+          targetFolder: '$(Build.ArtifactStagingDirectory)'
+
+      - task: PublishBuildArtifacts@1
+        displayName: Publish build artifacts
+        inputs:
+          pathToPublish: '$(Build.ArtifactStagingDirectory)'
+          artifactName: docker

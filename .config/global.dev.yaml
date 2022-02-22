@@ -1,0 +1,12 @@
+# Environment specific variables
+# Update these values to be specific to your environment.
+
+variables:
+  serviceConnection: azureInternal
+  environmentName: dev
+  subscriptionId: f2d85cf0-b21c-4794-a259-f508c89d08c2
+  region: eastus2
+  prefix: eoacr
+  resourceGroupName: ${{ variables.environmentName }}-${{ variables.prefix }}-acr-rg-${{ variables.region }}-01
+  containerRegistryName: ${{ variables.environmentName }}${{ variables.prefix }}acr01
+  yamlBuildTaskFile: .\build-push.yml

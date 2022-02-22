@@ -1,0 +1,43 @@
+FROM alpine:3.14.1
+
+USER root
+ENV http_proxy=''
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
+
+#need these for runtime pod scripts and binaries
+RUN apk add --no-cache -v curl bash unzip tar xz sudo \
+&& apk add libgcj --no-cache -v --repository=http://dl-cdn.alpinelinux.org/alpine/v3.8/main \
+&& apk add pdftk --no-cache -v --repository=http://dl-cdn.alpinelinux.org/alpine/v3.8/community \
+#adding one true type font will add all
+&& apk --no-cache -v --update add ttf-dejavu \
+&& apk add ttf-ubuntu-font-family --no-cache -v --repository=https://dl-cdn.alpinelinux.org/alpine/v3.13/main \
+#adding microsoft fonts
+&& apk --no-cache -v add msttcorefonts-installer fontconfig \
+&& update-ms-fonts \
+&& fc-cache -f \
+&& rm -rf /var/cache/apk/*
+
+RUN echo -e "#!/bin/bash \n\
+echo 'kubectl [disabled] '\$@ \n\
+" > /usr/local/bin/kubectl && chmod a+x /usr/local/bin/kubectl \
+&& echo -e "WBADIGITAL_RELEASE_NAME='Abe Froman' \n\
+" > /etc/wbadigital-release
+
+ENV JAVA_HOME=/deployments/cache/app/jdk/14 \
+    PATH="$PATH:/deployments/cache/app/jdk/14/bin"
+
+ARG GROUP=microservice
+ARG GID=1001
+RUN addgroup -g ${GID} ${GROUP}
+
+RUN echo "%${GROUP} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/${GROUP} \
+&& chmod 0440 /etc/sudoers.d/${GROUP} \
+&& mkdir -p /usr/local/ecomm/app && chgrp -Rv microservice /usr/local/ecomm && chmod -R 774 /usr/local/ecomm
+
+RUN apk add curl \
+    && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/master/contrib/install.sh | sh -s -- -b /usr/local/bin \
+    && trivy filesystem --exit-code 0 --severity LOW,MEDIUM --no-progress /
+
+RUN trivy filesystem --exit-code 1 --severity HIGH,CRITICAL --no-progress /
+
+CMD ["tail", "-f", "/dev/null"]

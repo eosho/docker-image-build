@@ -1,0 +1,123 @@
+version: v1.1.0
+steps:
+# Build alpine
+  - id: build-alpine
+    build: -t $Registry/baseimages/alpine/current:latest -f base/Dockerfile-alpine .
+  - cmd: -t $Registry/baseimages/alpine/current:latest
+    id: test-alpine
+    detach: true
+    ports:
+    - 80
+  - cmd: docker stop test-alpine
+  - id: push-alpine
+    push:
+    - "$Registry/baseimages/alpine/current:latest"
+    when:
+    - build-alpine
+    - test-alpine
+
+# Build alpine-glibc only after alpine (dependency)
+  - id: build-alpine-glibc
+    build: -t $Registry/baseimages/alpine/glibc:latest -f base/Dockerfile-alpine-glibc . --build-arg REGISTRY_NAME=$RegistryName
+    when:
+    - build-alpine
+  - cmd: -t $Registry/baseimages/alpine/glibc:latest
+    id: test-alpine-glibc
+    detach: true
+    ports:
+    - 80
+  - cmd: docker stop test-alpine-glibc
+  - id: push-alpine-glibc
+    push:
+    - "$Registry/baseimages/alpine/glibc:latest"
+    when:
+    - build-alpine-glibc
+    - test-alpine-glibc
+
+# Build jdk11 only after alpine-glibc is complete (dependency)
+  - id: build-jdk11
+    build: -t $Registry/baseimages/alpine/jdk11:$ID -f base/Dockerfile-jdk11 . --build-arg REGISTRY_NAME=$RegistryName
+    when:
+    - build-alpine-glibc
+  - cmd: -t $Registry/baseimages/alpine/jdk11:$ID
+    id: test-jdk11
+    detach: true
+    when:
+    - build-jdk11
+    ports:
+    - 80
+  - cmd: docker stop test-jdk11
+    when:
+    - build-jdk11
+  - id: push-jdk11
+    push:
+    - "$Registry/baseimages/alpine/jdk11:$ID"
+    when:
+    - build-jdk11
+    - test-jdk11
+
+# Build jdk14 only after alpine-glibc is complete (dependency)
+  - id: build-jdk14
+    build: -t $Registry/baseimages/alpine/jdk14:$ID -f base/Dockerfile-jdk14 . --build-arg REGISTRY_NAME=$RegistryName
+    when:
+    - build-alpine-glibc
+  - cmd: -t $Registry/baseimages/alpine/jdk14:$ID
+    id: test-jdk14
+    detach: true
+    when:
+    - build-jdk14
+    ports:
+    - 80
+  - cmd: docker stop test-jdk14
+    when:
+    - build-jdk14
+  - id: push-jdk14
+    push:
+    - "$Registry/baseimages/alpine/jdk14:$ID"
+    when:
+    - build-jdk14
+    - test-jdk14
+
+# Build node12 only after alpine is complete (dependency)
+  - id: build-node12
+    build: -t $Registry/baseimages/alpine/node12:$ID -f base/Dockerfile-node12 . --build-arg REGISTRY_NAME=$RegistryName
+    when:
+    - build-alpine
+  - cmd: -t $Registry/baseimages/alpine/node12:$ID
+    id: test-node12
+    detach: true
+    when:
+    - build-node12
+    ports:
+    - 80
+  - cmd: docker stop test-node12
+    when:
+    - build-node12
+  - id: push-node12
+    push:
+    - "$Registry/baseimages/alpine/node12:$ID"
+    when:
+    - build-node12
+    - test-node12
+
+# Build jdk14 only after alpine is complete (dependency)
+  - id: build-node14
+    build: -t $Registry/baseimages/alpine/node14:$ID -f base/Dockerfile-node14 . --build-arg REGISTRY_NAME=$RegistryName
+    when:
+    - build-alpine
+  - cmd: -t $Registry/baseimages/alpine/node14:$ID
+    id: test-node14
+    when:
+    - build-node14
+    detach: true
+    ports:
+    - 80
+  - cmd: docker stop test-node14
+    when:
+    - build-node14
+  - id: push-node14
+    push:
+    - "$Registry/baseimages/alpine/node14:$ID"
+    when:
+    - build-node14
+    - test-node14

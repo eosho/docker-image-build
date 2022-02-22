@@ -1,0 +1,31 @@
+parameters:
+  resourceGroupName: ''
+  vmImage: ''
+  serviceConnection: ''
+  subscriptionId: ''
+
+jobs:
+  - job: Teardown_Env
+    displayName: 'Teardown Env'
+    pool:
+      vmImage: "${{ parameters.vmImage }}"
+    steps:
+      - checkout: self
+      - task: AzurePowerShell@5
+        displayName: 'Teardown - Delete RG'
+        inputs:
+          azureSubscription: '$(serviceConnection)'
+          ScriptType: 'InlineScript'
+          Inline: |
+            # load module
+            . $(System.DefaultWorkingDirectory)/orchestration/ImportModules.ps1
+
+            . $(System.DefaultWorkingDirectory)/orchestration/orchestrationService/New-ARMDeployment.ps1
+
+            $paramArgs = @{
+              SubscriptionId       = "$(subscriptionId)"
+              ResourceGroupName    = "$(resourceGroupName)"
+            }
+
+            New-ARMDeployment @paramArgs -TearDownEnvironment
+          azurePowerShellVersion: 'LatestVersion'

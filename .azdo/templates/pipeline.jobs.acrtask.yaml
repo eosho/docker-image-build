@@ -1,0 +1,15 @@
+parameters:
+  serviceConnection: ''
+  containerRegistryName: ''
+  yamlBuildTaskFile: ''
+
+steps:
+  - task: AzureCLI@2
+    displayName: 'Build & Push Container Image'
+    inputs:
+      azureSubscription: "$(serviceConnection)"
+      scriptType: pscore
+      scriptLocation: inlineScript
+      addSpnToEnvironment: true
+      inlineScript: |
+          az acr run --registry $(containerRegistryName) --file $(yamlBuildTaskFile) .

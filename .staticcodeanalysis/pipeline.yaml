@@ -1,0 +1,77 @@
+name: CodeScanning_$(Date:yyyyMMdd)_$(Rev:r)
+
+parameters:
+  - name: environment
+    displayName: Environment Name
+    type: string
+    default: dev
+    values:
+      - dev
+      - prod
+
+  - name: buildImages
+    displayName: Images to scan
+    type: object
+    default:
+      - alpine
+      - alpine-glibc
+      - jdk11
+      - jdk14
+      - node12
+      - node14
+
+variables:
+- ${{ if eq(parameters.environment, 'dev') }}:
+  - template: /.config/global.dev.yaml
+- ${{ if eq(parameters.environment, 'prod') }}:
+  - template: /.config/global.prod.yaml
+
+trigger:
+  batch: true
+  branches:
+    include:
+    - main
+    - dev
+  paths:
+    exclude:
+    - README.md
+    - .azdo/*
+    - .config/*
+    - .docs/*
+
+jobs:
+  - job: Lint_Code_Analysis
+    displayName: 'Lint - Code Analysis'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - script: |
+          docker pull hadolint/hadolint
+        displayName: Install Hadolint (linter)
+
+      - ${{ each image in parameters.buildImages }}:
+        - script: |
+            docker run --rm -i -v $(System.DefaultWorkingDirectory)/hadolint.yml:/.config/hadolint.yml hadolint/hadolint < $(System.DefaultWorkingDirectory)/base/Dockerfile-${{ image }}
+          displayName: Hadolint linter - ${{ image }}
+
+  - job: Scan_Code_Analysis
+    displayName: 'Scanning - Code Analysis'
+    dependsOn: Lint_Code_Analysis
+    condition: |
+      and
+        (
+          succeeded(),
+          in(dependencies.Lint_Code_Analysis.result, 'Succeeded', 'Skipped')
+        )
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+        - task: AzureCLI@2
+          displayName: 'Build & Scan Images via YAML'
+          inputs:
+            azureSubscription: "$(serviceConnection)"
+            scriptType: pscore
+            scriptLocation: inlineScript
+            addSpnToEnvironment: true
+            inlineScript: |
+                az acr run --registry $(containerRegistryName) --file ./build-scan.yml .

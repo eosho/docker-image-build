@@ -1,0 +1,58 @@
+parameters:
+  resourceGroupName: ''
+  serviceConnection: ''
+  containerRegistryName: ''
+  imageName: ''
+  imageVersion: ''
+  vmImage: ''
+  yamlBuildTaskFile: ''
+
+  automateBuild: ''
+
+jobs:
+  - job: "Automate_Task"
+    condition: eq('${{ parameters.automateBuild }}', 'true')
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - checkout: self
+      - task: AzureCLI@2
+        displayName: "Initialize Azure Credentials"
+        inputs:
+          azureSubscription: "$(serviceConnection)"
+          scriptType: pscore
+          scriptLocation: inlineScript
+          addSpnToEnvironment: true
+          inlineScript: |
+            $subscriptionId=$(az account show --query id -o tsv)
+            Write-Host "##vso[task.setvariable variable=ARM_TENANT_ID]$env:tenantId"
+            Write-Host "##vso[task.setvariable variable=ARM_CLIENT_ID]$env:servicePrincipalId"
+            Write-Host "##vso[task.setvariable variable=ARM_SUBSCRIPTION_ID]$subscriptionId"
+            Write-Host "##vso[task.setvariable variable=ARM_CLIENT_SECRET;issecret=true]$env:servicePrincipalKey"
+
+      - task: AzureCLI@2
+        displayName: "Configure - ACR task"
+        inputs:
+          azureSubscription: "$(serviceConnection)"
+          scriptType: pscore
+          scriptLocation: inlineScript
+          addSpnToEnvironment: true
+          inlineScript: |
+            # load module
+            . $(System.DefaultWorkingDirectory)/orchestration/ImportModules.ps1
+
+            . $(System.DefaultWorkingDirectory)/orchestration/orchestrationService/New-ContainerDeployment.ps1
+
+            $paramArgs = @{
+              ContainerRegistryName = "$(containerRegistryName)"
+              AzureDevOpsGitUrl     = "$(adoGitRepoUrl)"
+              AzureDevOpsToken      = "$(ADO_PAT_TOKEN)"
+              ImageName             = "$(imageName)"
+              ResourceGroupName     = "$(resourceGroupName)"
+              ImageVersion          = "$(imageVersion)"
+              RegistryUserName      = "$(ARM_CLIENT_ID)"
+              RegistryPassword      = "$(ARM_CLIENT_SECRET)"
+              YamlFilePath          = "$(yamlBuildTaskFile)"
+            }
+
+            New-ContainerDeployment @paramArgs -AutomateImageBuild

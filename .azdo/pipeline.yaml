@@ -1,0 +1,218 @@
+name: Docker-BaseImage_${{ parameters.environment }}_$(Date:yyyyMMdd)_$(Rev:r)
+
+parameters:
+  - name: environment
+    displayName: Environment Name
+    type: string
+    default: dev
+    values:
+      - dev
+      - prod
+  
+  - name: validationOnly
+    displayName: Validate Bicep
+    type: boolean
+    default: false
+    values:
+      - true
+      - false
+
+  - name: useYamlDefinitionFile
+    displayName: Use YAML
+    type: boolean
+    default: true
+    values:
+      - true
+      - false
+
+  - name: buildImages
+    displayName: Images to build
+    type: object
+    default:
+      - current
+      - glibc
+      - jdk11
+      - jdk14
+      - node12
+      - node14
+
+  - name: automateBuild
+    displayName: Automate Build via repo push
+    type: boolean
+    default: false
+    values:
+      - true
+      - false
+
+  - name: scanBaseImages
+    displayName: Vulnerability Scan via ASC
+    type: boolean
+    default: false
+    values:
+      - true
+      - false
+
+  - name: teardownEnvironment
+    displayName: Delete RG (clean up)
+    type: boolean
+    default: false
+    values:
+      - true
+      - false
+
+variables:
+- template: pipeline.variables.yaml
+- ${{ if eq(parameters.environment, 'dev') }}:
+  - template: /.config/global.dev.yaml
+- ${{ if eq(parameters.environment, 'wba') }}:
+  - template: /.config/global.wba.yaml
+- ${{ if eq(parameters.environment, 'prod') }}:
+  - template: /.config/global.prod.yaml
+
+trigger: none
+
+stages:
+  - stage: PreReq
+    dependsOn: []
+    condition: eq('${{ parameters.teardownEnvironment }}', 'false')
+    jobs:
+      - template: templates/pipeline.jobs.pre.yaml
+
+  - stage: Deploy_Bicep
+    dependsOn:
+      - PreReq
+    condition: eq('${{ parameters.teardownEnvironment }}', 'false')
+    jobs:
+      - template: templates/pipeline.jobs.deploy.yaml
+        parameters:
+          resourceGroupName: '$(resourceGroupName)'
+          environmentName: '$(environmentName)'
+          region: '$(region)'
+          prefix: '$(prefix)'
+          vmImage: '$(vmImage)'
+          serviceConnection: '$(serviceConnection)'
+          validateDeployment: '${{ parameters.validationOnly }}'
+
+  # - stage: 'Build_via_Docker'
+  #   condition: |
+  #     and
+  #       (
+  #         eq('${{ parameters.validationOnly }}', 'false'),
+  #         eq('${{ parameters.teardownEnvironment }}', 'false'),
+  #         eq('${{ parameters.useYamlDefinitionFile }}', 'false'),
+  #         succeeded()
+  #       )
+  #   displayName: 'Build via Docker'
+  #   dependsOn:
+  #     - Deploy_Bicep
+  #   jobs:
+  #     - job:
+  #       displayName: Docker build and push
+  #       steps:
+  #       - task: Docker@2
+  #         displayName: ACR login
+  #         inputs:
+  #           containerRegistry: $(acrServiceConnection)
+  #           command: login
+
+  #       - ${{ each image in parameters.buildImages }}:
+  #         - template: templates/pipeline.jobs.build.yaml
+  #           parameters:
+  #             serviceConnection: '$(serviceConnection)'
+  #             acrServiceConnection: '$(acrServiceConnection)'
+  #             containerRegistryName: '$(containerRegistryName)'
+  #             imageObject: {
+  #               imageName: "${{ image.imageName }}",
+  #               imageVersion: "${{ image.imageVersion }}",
+  #               dockerFileName: "${{ image.dockerFileName }}"
+  #             }
+  #             repositoryName: '$(repositoryName)'
+
+  # - ${{ if eq(parameters.environment, 'prod') }}:
+  #   - stage: 'WaitForApproval'
+  #     jobs:
+  #       - deployment: 
+  #         environment: prod
+  #       - job:
+  #         steps:
+  #           - task: Delay@1
+  #             displayName: Wait for approval
+  #             inputs:
+  #               delayForMinutes: '5'
+
+  - stage: 'Build_via_ACRTask'
+    condition: |
+      and
+        (
+          eq('${{ parameters.useYamlDefinitionFile }}', true),
+          eq('${{ parameters.validationOnly }}', 'false'),
+          eq('${{ parameters.teardownEnvironment }}', 'false'),
+          succeeded()
+        )
+    displayName: 'ACR Build & Push'
+    dependsOn: 
+      - Deploy_Bicep
+    jobs:
+      - job:
+        displayName: ACR Task - Image Build
+        steps:
+        - template: templates/pipeline.jobs.acrtask.yaml
+          parameters:
+            serviceConnection: '$(serviceConnection)'
+            acrServiceConnection: '$(acrServiceConnection)'
+            containerRegistryName: '$(containerRegistryName)'
+
+  - stage: Automate_ACR_task
+    dependsOn:
+      - Build_via_ACRTask
+    condition: |
+      and
+        (
+          eq('${{ parameters.validationOnly }}', 'false'),
+          eq('${{ parameters.teardownEnvironment }}', 'false'),
+          succeeded()
+        )
+    jobs:
+      - template: templates/pipeline.jobs.automate.yaml
+        parameters:
+          resourceGroupName: '$(resourceGroupName)'
+          containerRegistryName: '$(containerRegistryName)'
+          serviceConnection: '$(serviceConnection)'
+          vmImage: '$(vmImage)'
+          imageName: '$(ImageName)'
+          automateBuild: '${{ parameters.automateBuild }}'
+
+  - stage: ASC_Image_Scan
+    dependsOn:
+      - Build_via_ACRTask
+    condition: |
+      and
+        (
+          eq('${{ parameters.validationOnly }}', 'false'),
+          eq('${{ parameters.teardownEnvironment }}', 'false'),
+          eq('${{ parameters.scanBaseImages }}', 'true'),
+          in(dependencies.Build_via_ACRTask.result, 'Succeeded', 'Skipped'),
+          in(dependencies.Build_via_Docker.result, 'Succeeded', 'Skipped')
+        )
+    jobs:
+      - template: templates/pipeline.jobs.asc-scan.yaml
+        parameters:
+          containerRegistryName: '$(containerRegistryName)'
+          serviceConnection: '$(serviceConnection)'
+          buildImages: '${{ parameters.buildImages }}'
+
+  - stage: Teardown_Env
+    dependsOn: []
+    condition: |
+      and
+        (
+          eq('${{ parameters.validationOnly }}', 'false'),
+          eq('${{ parameters.teardownEnvironment }}', 'true')
+        )
+    jobs:
+      - template: templates/pipeline.jobs.teardown.yaml
+        parameters:
+          resourceGroupName: '$(resourceGroupName)'
+          vmImage: '$(vmImage)'
+          serviceConnection: '$(serviceConnection)'
+          subscriptionId: '$(subscriptionId)'

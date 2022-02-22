@@ -1,0 +1,34 @@
+ARG REGISTRY_NAME
+FROM ${REGISTRY_NAME}.azurecr.io/baseimages/alpine/current:latest
+
+RUN apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/v3.12/main/ nodejs=12.22.4-r0 \
+&& apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/v3.12/main/ npm=12.22.4-r0 \
+&& echo "alpine "$(cat /etc/alpine-release) && echo "node version "$(node -v)
+
+ENV PHANTOMJS_VERSION=2.1.1
+
+RUN cd /tmp \
+&& curl -Ls https://github.com/dustinblackman/phantomized/releases/download/${PHANTOMJS_VERSION}/dockerized-phantomjs.tar.gz | tar xz \
+&& cp -R lib lib64 / \
+&& cp -R usr/lib/x86_64-linux-gnu /usr/lib \
+&& cp -R usr/share /usr/share \
+&& cp -R etc/fonts /etc \
+&& curl -k -Ls https://bitbucket.org/ariya/phantomjs/downloads/phantomjs-${PHANTOMJS_VERSION}-linux-x86_64.tar.bz2 | tar -jxf - \
+&& cp phantomjs-${PHANTOMJS_VERSION}-linux-x86_64/bin/phantomjs /usr/local/bin/phantomjs \
+&& rm -fR phantomjs-${PHANTOMJS_VERSION}-linux-x86_64 \
+&& npm install -g --unsafe-perm=true --allow-root html-pdf
+
+#temporary so they can debug the voltage wrapper
+RUN apk add --no-cache python3 make build-base
+
+#contrast security install
+#COPY contrast_security.yaml /contrast_security.yaml
+#RUN npm install -g @contrast/agent --no-optional && npm list -g --depth 0
+
+RUN apk add curl \
+    && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/master/contrib/install.sh | sh -s -- -b /usr/local/bin \
+    && trivy filesystem --exit-code 0 --severity LOW,MEDIUM --no-progress /
+
+RUN trivy filesystem --exit-code 1 --severity HIGH,CRITICAL --no-progress /
+
+CMD ["tail", "-f", "/dev/null"]

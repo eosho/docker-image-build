@@ -1,0 +1,45 @@
+ARG REGISTRY_NAME
+FROM ${REGISTRY_NAME}.azurecr.io/baseimages/alpine/current:latest
+
+#glibc installation
+RUN apk add --no-cache tzdata --virtual .build-deps binutils zstd \
+&& GLIBC_VER="2.33-r0" \
+&& ALPINE_GLIBC_REPO="https://github.com/sgerrand/alpine-pkg-glibc/releases/download" \
+#&& GCC_LIBS_URL="https://archive.archlinux.org/packages/g/gcc-libs/gcc-libs-10.2.0-6-x86_64.pkg.tar.zst" \
+&& GCC_LIBS_URL="https://archive.archlinux.org/packages/g/gcc-libs/gcc-libs-11.1.0-1-x86_64.pkg.tar.zst" \
+&& ZLIB_URL="https://archive.archlinux.org/packages/z/zlib/zlib-1%3A1.2.11-4-x86_64.pkg.tar.xz" \
+&& curl -LfsS https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub -o /etc/apk/keys/sgerrand.rsa.pub \
+&& curl -S -o /tmp/glibc-${GLIBC_VER}.apk -L ${ALPINE_GLIBC_REPO}/${GLIBC_VER}/glibc-${GLIBC_VER}.apk \
+&& ls -lh /tmp/glibc-${GLIBC_VER}.apk  | awk '{printf "%s %s\n\n", $9, $5}' \
+&& apk add --no-cache -v /tmp/glibc-${GLIBC_VER}.apk \
+&& curl -S -o /tmp/glibc-bin-${GLIBC_VER}.apk -L ${ALPINE_GLIBC_REPO}/${GLIBC_VER}/glibc-bin-${GLIBC_VER}.apk \
+&& ls -lh /tmp/glibc-bin-${GLIBC_VER}.apk | awk '{printf "%s %s\n\n", $9, $5}' \
+&& apk add --no-cache -v /tmp/glibc-bin-${GLIBC_VER}.apk \
+&& curl -S -o /tmp/glibc-i18n-${GLIBC_VER}.apk -L ${ALPINE_GLIBC_REPO}/${GLIBC_VER}/glibc-i18n-${GLIBC_VER}.apk \
+&& ls -lh /tmp/glibc-i18n-${GLIBC_VER}.apk | awk '{printf "%s %s\n\n", $9, $5}' \
+&& apk add --no-cache -v /tmp/glibc-i18n-${GLIBC_VER}.apk \
+&& /usr/glibc-compat/bin/localedef -i en_US -f UTF-8 en_US.UTF-8 \
+&& echo "export LANG=$LANG" > /etc/profile.d/locale.sh \
+&& curl -SL ${GCC_LIBS_URL} -o /tmp/gcc-libs.tar.zst \
+&& ls -lh /tmp/gcc-libs.tar.zst | awk '{printf "%s %s\n\n", $9, $5}' \
+&& mkdir /tmp/gcc \
+&& zstd -d /tmp/gcc-libs.tar.zst --output-dir-flat /tmp \
+&& tar -xf /tmp/gcc-libs.tar -C /tmp/gcc \
+&& mv /tmp/gcc/usr/lib/libgcc* /tmp/gcc/usr/lib/libstdc++* /usr/glibc-compat/lib \
+&& strip /usr/glibc-compat/lib/libgcc_s.so.* /usr/glibc-compat/lib/libstdc++.so* \
+&& curl -SL ${ZLIB_URL} -o /tmp/libz.tar.xz \
+&& ls -lh /tmp/libz.tar.xz | awk '{printf "%s %s\n\n", $9, $5}' \
+&& mkdir /tmp/libz \
+&& tar -xf /tmp/libz.tar.xz -C /tmp/libz \
+&& mv /tmp/libz/usr/lib/libz.so* /usr/glibc-compat/lib \
+&& apk del --purge .build-deps glibc-i18n \
+&& rm -rf /tmp/*.apk /tmp/gcc /tmp/gcc-libs.tar* /tmp/libz /tmp/libz.tar.xz /var/cache/apk/* \
+&& apk info glibc 2> /dev/null | head -n1 | sed 's/glibc-//' | sed 's/ description://' > /etc/glibc-release
+
+RUN apk add curl \
+    && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/master/contrib/install.sh | sh -s -- -b /usr/local/bin \
+    && trivy filesystem --exit-code 0 --severity LOW,MEDIUM --no-progress /
+
+RUN trivy filesystem --exit-code 1 --severity HIGH,CRITICAL --no-progress /
+
+CMD ["tail", "-f", "/dev/null"]

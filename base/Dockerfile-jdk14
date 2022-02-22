@@ -1,0 +1,26 @@
+ARG REGISTRY_NAME
+FROM ${REGISTRY_NAME}.azurecr.io/baseimages/alpine/glibc:latest
+
+#Install latest OpenJDK 14.x
+RUN curl -L https://github.com/$(curl -Ls https://github.com/AdoptOpenJDK/openjdk14-binaries/releases/latest | grep 'href="/AdoptOpenJDK/openjdk.[0-9]*-binaries/releases/download/jdk-.[0-9]*\..*OpenJDK.[0-9]*U-jdk_x64_linux_.*\.tar\.gz"' | grep -v linuxXL | head -n 1 | cut -d '"' -f 2 | sed 's/_openj9-[0-9]*\.[0-9]*\.[0-9]*//g' | sed 's/linux_openj9/linux_hotspot/') -o /tmp/openjdk.tar.gz \
+&& mkdir -p /opt/java/openjdk \
+&& cd /opt/java/openjdk \
+&& tar -xf /tmp/openjdk.tar.gz --strip-components=1 \
+&& rm -rf /var/cache/apk/* \
+&& rm -rf /tmp/openjdk.tar.gz
+
+ENV JAVA_HOME=/opt/java/openjdk \
+    PATH="/opt/java/openjdk/bin:$PATH"
+
+#COPY java.contrast_security.yaml /contrast_security.yaml
+#RUN cd /usr/share/java \
+#&& curl -X GET https://cs001.contrastsecurity.com/Contrast/api/ng/478802ce-4c93-4497-8b79-689a79bd5be3/agents/default/JAVA -H 'Authorization: ZGF2aWQudGFtQHdhbGdyZWVucy5jb206UUxLNEZMNEFHUTdLTElCUA==' -H 'API-Key: r5niM7F90j0dMHQNB7C16pSmgQQY2DJ7' -H 'Accept: application/json' -OJ \
+#&& java -jar contrast.jar info
+
+RUN apk add curl \
+    && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/master/contrib/install.sh | sh -s -- -b /usr/local/bin \
+    && trivy filesystem --exit-code 0 --severity LOW,MEDIUM --no-progress /
+
+RUN trivy filesystem --exit-code 1 --severity HIGH,CRITICAL --no-progress /
+
+CMD ["tail", "-f", "/dev/null"]

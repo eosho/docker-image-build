@@ -1,0 +1,5 @@
+variables:
+  imageName: current
+  imageVersion: latest
+  vmImage: ubuntu-latest
+  adoGitRepoUrl: https://dev.azure.com/eotechsolutionsLLC/Azure%20Infrastructure/_git/docker-image-build
